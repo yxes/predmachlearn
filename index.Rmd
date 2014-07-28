@@ -1,0 +1,75 @@
+---
+title: "Activity Quality Prediction"
+author: "Stephen D. Wells"
+date: "July 27, 2014"
+output: html_document
+---
+
+### Proceedure
+## Data Aggregation
+
+Raw data was gathered from accelerometers located on the arm, belt and forearm of six subjects.
+Each subject was required to perform barbell lifts correctly and incorrectly utilizing five
+different techniques.  The original dataset can be found at: <http://groupware.les.inf.puc-rio.br/har>
+
+```{r}
+dat <- read.csv("pml-training.csv")
+```
+
+A quick review of the data reveals a lot of holes (NA) that will skew our prediction algorithm so we need
+to clean the data.  In this case any factors that are missing more than 90% of their values are removed.
+
+```{r}
+dat <- dat[, -which(colSums(is.na(dat)) > 0.9 * nrow(dat))]
+```
+
+Next we remove predictors that have zero or near zero variance.
+
+```{r}
+library(caret, quietly=T)
+dat <- dat[-nearZeroVar(dat)]
+``` 
+
+Before we proceed we need to further refine our feature selection to those properties that most closely relate to
+predicting our outcome.  After reviewing and comparing the meanDecreaseAccuracy and MeanDecreaseGini on the 
+entire dataset at stage we took the primary modifiers that resulted in each column.  Though this assuredly reduced our
+accuracy it enabled us to run the results in my limited hardware.
+
+```{r}
+cols <- c(6, 7, 8, 9, 41, 44, 45, 46, 47, 59)
+names(dat)[cols]
+dat <- dat[,cols]
+```
+
+Finally, we need to divide up our training data into a test set before we run our model. We determined the top 9 
+factors by comparing the MeanDecreaseAccuracy and the MeanDecreaseGini lists using this call:
+
+```{r}
+library(caret, quietly=T)
+inTrain <- createDataPartition(dat$classe, p=0.7, list=F)
+training <- dat[inTrain,]
+testing <- dat[-inTrain,]
+```
+
+We were able to compress our data using cross validation and center and scaling before
+training our data on the full dataset.
+
+```{r}
+set.seed(33433)
+library(doParallel, quietly=T)
+cl = makeCluster(detectCores())
+registerDoParallel(cl)
+
+modFit <- train(classe ~ ., method="rf", preProcess=c("center", "scale"), 
+                trControl=trainControl(method = "cv", number = 4), data=training)
+print(modFit$finalModel)
+confusionMatrix(predict(modFit, testing), testing$classe)
+```
+
+As you can see, even using this tiny subset of variables yields susprisingly accurate results.
+
+## Test Answers
+
+```{r}
+predict(modFit, read.csv("pml-testing.csv"))
+```
